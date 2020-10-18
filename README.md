@@ -46,7 +46,7 @@ When capturing in mixed mode (both analog and digital signals) with Saleae Logic
 
     [![6.25MHz_digital_1.5625MHz_analog_3sec](img/6.25MHz_digital_1.5625MHz_analog_3sec-Saleae_Logic.png)](img/6.25MHz_digital_1.5625MHz_analog_3sec-Saleae_Logic.png)
 
-2. [data/500MHz_digital_0.125MHz_analog_5sec.logicdata](data/500MHz_digital_0.125MHz_analog_5sec.logicdata) - 6.25 MHz digital sampling rate, with 1.5625 MHz analog sampling rate, 3-second capture
+2. [data/500MHz_digital_0.125MHz_analog_5sec.logicdata](data/500MHz_digital_0.125MHz_analog_5sec.logicdata) - 500 MHz digital sampling rate, with 125 kHz analog sampling rate, 5-second capture
 
     [![6.25MHz_digital_1.5625MHz_analog_3sec](img/500MHz_digital_0.125MHz_analog_5sec-Saleae_Logic.png)](img/500MHz_digital_0.125MHz_analog_5sec-Saleae_Logic.png)
 
