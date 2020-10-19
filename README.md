@@ -309,3 +309,72 @@ $ ls -la *_dg.sr
 ```
 
 
+## Merging/combining the .sr files into a single sigrok/PulseView session
+
+So, from our two mixed-mode (analog & digital) Saleae Logic captures, we obtained four `.sr` files - two with analog data, and two with digital data, all of which having (in principle) differing sampling rates. Let's check them again through the command line:
+
+```
+$ for ifile in *.sr; do echo $ifile; "C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" -i $ifile --show; echo; done
+500MHz_digital_0.125MHz_analog_5sec_an.sr
+Samplerate: 125000
+Channels: 1
+-  Channel 0: analog
+Analog sample count: 626405
+
+500MHz_digital_0.125MHz_analog_5sec_dg.sr
+Samplerate: 1000000000
+Channels: 2
+- top.Channel_1: logic
+- top.Channel_2: logic
+Logic unitsize: 1
+Logic sample count: 5008344477
+
+6.25MHz_digital_1.5625MHz_analog_3sec_an.sr
+Samplerate: 1562500
+Channels: 1
+-  Channel 0: analog
+Analog sample count: 4718253
+
+6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+Samplerate: 1000000000
+Channels: 2
+- top.Channel_1: logic
+- top.Channel_2: logic
+Logic unitsize: 1
+Logic sample count: 2759602561
+```
+
+So, in order to bring all of these `.sr` files into the same session, we have to generally handle the following problems:
+
+* All of the data files need to be on the same sampling rate
+* The channel names need to be changed so they are unique in the new, merged, session scope
+
+The sigrok `.sr` file format is documented at https://sigrok.org/wiki/File_format:Sigrok/v2 - which informs us, that `.sr` (of the current version at time of writing, which is V2) files are essentially ZIP archives.
+
+Regarding the sampling rate, the most straightforward solution is to find the largest sampling rate, and then resample all data to this sampling rate. We have already determined that our files use rates of 125000, 1562500 and 1000000000 Hz - thus, the most straightforward solution is to resample the 125000 and 1562500 Hz analog signals to 1000000000 Hz. Clearly, this will result with a *****massive***** file size increase - especially since in this case, we are to resample analog data.
+
+Furthermore, we'd need to choose whether we want interpolation of analog samples upon resampling, or not. Thankfully, the relationships between the sampling rates are:
+
+* 1000000000/125000 = 8000
+* 1000000000/1562500 = 640
+
+... or in other words, they are integer ratios - so a resampling without interpolation would simply involve repeating a sample an integet number of times.
+
+Note that sigrok (or rather, `libsigrok`) has a Python API: https://www.sigrok.org/api/libsigrok/0.5.0/bindings/python/ - and there is a Python example of using this API at https://github.com/martinling/sigrok-cli-python ; however, the Windows installers https://sigrok.org/wiki/Windows#Windows_installers for sigrok/PulseView are static, so no shared (.dll) libsigrok libraries are available from these installers (and consequently, no Python libraries either). So, in order to get these bindings on Windows, we'd have to build `libsigrok` from source - however https://sigrok.org/wiki/Windows#Native_build_using_MSYS2 states that:
+
+> **NOT yet working**: libsigrok Python/Ruby/Java bindings [...]
+
+... and indeed, as of time of this writing, there are problems compiling in this setup (see [msys2_mingw64_sigrok_build_log.md](msys2_mingw64_sigrok_build_log.md)
+
+So, we need to go few steps back: since the digital data .vcd files are both already on 1 GHz sampling rate, all we need to do is, to upsample the analog data .csv files to 1 GHz as well.
+
+Thankfully, it is relatively easy to resample .csv files, that are in the format in this example, using the [pandas](https://pandas.pydata.org/) Python library. This repository contains one script that does that:
+
+    python3 code/resample_csv_pandas.py data/500MHz_digital_0.125MHz_analog_5sec_an.csv
+
+However, note that this script is so memory hungry, it will most likely cause your system to hang or freeze (or fail with `MemoryError: Unable to allocate 37.3 GiB for an array with shape (5011232001,) and data type int64`).
+
+
+
+
+
