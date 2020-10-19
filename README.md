@@ -52,3 +52,145 @@ When capturing in mixed mode (both analog and digital signals) with Saleae Logic
 
 
 So - the goal of this exercise, is to bring all of these captures in a single PulseView session.
+
+
+## Exporting from Saleae Logic
+
+Since we made "mixed-mode" (analog & digital) captures in Saleae Logic, we have several options to export the data, so that we can import it in sigrok/PulseView; we can see these options by clicking Options/Export Data in Saleae Logic 1.2.18, once we have loaded a `.logicdata` file in it:
+
+* Digital and Analog export - see [img/Saleae_Logic_Export_dg_an.png](img/Saleae_Logic_Export_dg_an.png)
+    * Export to **Csv** `.csv` file
+    * Export to **Matlab** `.mat` file
+
+Note that the **Csv** import in sigrok/PulseView assumes that there is a single sampling rate; while the sigrok/PulseView .csv importer can interpret timestamps as floating-point seconds, it only does so to calculate the delta between two consecutive timestamps, and to derive the overall sampling rate from them; thus, timestamps are not interpreted "absolutely", and timestamp "gaps" (outside of the assumed sampling rate) in the .csv are not supported (see [sigrok / Thread: [sigrok-devel] How is the .csv import with timestamps in PulseView supposed to work?](https://sourceforge.net/p/sigrok/mailman/sigrok-devel/thread/3d80e3ed-c29a-e7d1-056e-50b8edba7156@brothers-sons.dk/))
+
+However, if we export a "mixed-mode" .csv from Saleae Logic, we get a file like:
+
+```
+ Time [s],Channel 0-Analog, Time [s],Channel 1-Digital, Time [s],Channel 2-Digital
+0.000000000000000, -0.038281224668026, 0.000000000000000, 0, 0.000000000000000, 0
+0.000000640000000, -0.033183418214321, 0.096834720000000, 1, 0.123360000000000, 1
+0.000001280000000, -0.033183418214321, 0.096855360000000, 0, 0.223311200000000, 0
+0.000001920000000, -0.038281224668026, 0.096867840000000, 1, 0.623114400000000, 1
+...
+```
+
+... or in other words, we have several timestamp columns, all of which have "gaps" - which is not likely to import correctly in sigrok/PulseView.
+
+As far as the **Matlab** file format, sigrok/PulseView does not currently support it natively; there are Python libraries that can load Matlab `.mat` files ( using `from scipy.io import loadmat`; see https://towardsdatascience.com/how-to-load-matlab-mat-files-in-python-1f200e1287b5 ), however, that means we have to additionally write a converter from Matlab to sigrok format.
+
+---------
+
+So, let's see if there is an easier way to import this data into sigrok/PulseView - we can try exporting digital and analog data from Saleae Logic separately. The options here are (remember to set "Choose which channels to export" in the "Data Export" dialog in Saleae Logic first):
+
+* Analog Only export - see [img/Saleae_Logic_Export_an.png](img/Saleae_Logic_Export_an.png)
+    * Export to **Binary** `.bin` file
+    * Export to **Csv** `.csv` file
+    * Export to **Matlab** `.mat` file
+
+For the Analog Only export, the **Matlab** - and the **Binary** - options present the same problem as earlier - we'd have to write a converter program, to get this data into sigrok/PulseView.
+
+However, using the **Csv** export option should this time be fine - because the exported `.csv` file, for a single channel, looks like this:
+
+```
+Time[s], Channel 0
+ Time [s],Channel 0-Analog
+0.000000000000000, -0.038281224668026
+0.000000640000000, -0.033183418214321
+0.000001280000000, -0.033183418214321
+0.000001920000000, -0.038281224668026
+...
+```
+
+... which means the data is represented with timestamps at a constant sampling rate (without gaps) - meaning that sigrok/PulseView should be able to interpret it correctly.
+
+So, let's say we've exported these `.csv` files from our source captures (as they are intermediary files, the `.csv` files are not saved in this repository):
+
+* `6.25MHz_digital_1.5625MHz_analog_3sec.logicdata` -> `6.25MHz_digital_1.5625MHz_analog_3sec_an.csv`
+* `500MHz_digital_0.125MHz_analog_5sec.logicdata` -> `500MHz_digital_0.125MHz_analog_5sec_an.csv`
+
+We only have to delete one of the extra header lines (say, the ` Time [s],Channel 0-Analog` one) manually from the .csv files, and they should be ready for import in sigrok/PulseView.
+
+First, let's check the file sizes (the below snippets have been ran under MSYS2 `bash` in MS Windows 10):
+
+```
+$ ls -la *_an.csv
+-rw-r--r-- 1 user None  24M Oct 19 07:05 500MHz_digital_0.125MHz_analog_5sec_an.csv
+-rw-r--r-- 1 user None 174M Oct 19 07:04 6.25MHz_digital_1.5625MHz_analog_3sec_an.csv
+```
+
+We can see that the file sizes are different - which is expected, since the two analog captures have been made at different sampling rates.
+
+We can also do a quick check with sigrok and logging, to see how these files will be interpreted:
+
+```
+$ "C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3 -I csv:header=yes:column_formats=t,a \
+  -i 500MHz_digital_0.125MHz_analog_5sec_an.csv \
+  --show
+cli: Received SR_DF_HEADER.
+sr: input/csv: Cannot convert timestamp text 0.000000000000000 in line 2 (or zero value).
+cli: Received SR_DF_META.
+cli: Got samplerate 125000 Hz.
+cli: Received SR_DF_ANALOG (626405 samples).
+cli: Received SR_DF_END.
+Samplerate: 125000
+Channels: 1
+-  Channel 0: analog
+Analog sample count: 626405
+
+$ "C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3 -I csv:header=yes:column_formats=t,a \
+  -i 6.25MHz_digital_1.5625MHz_analog_3sec_an.csv \
+  --show
+cli: Received SR_DF_HEADER.
+sr: input/csv: Cannot convert timestamp text 0.000000000000000 in line 2 (or zero value).
+cli: Received SR_DF_META.
+cli: Got samplerate 1562500 Hz.
+cli: Received SR_DF_ANALOG (1048576 samples).
+cli: Received SR_DF_ANALOG (1048576 samples).
+cli: Received SR_DF_ANALOG (1048576 samples).
+cli: Received SR_DF_ANALOG (1048576 samples).
+cli: Received SR_DF_ANALOG (523949 samples).
+cli: Received SR_DF_END.
+Samplerate: 1562500
+Channels: 1
+-  Channel 0: analog
+Analog sample count: 4718253
+```
+
+So, we can see that the analog sample rates have been derived correctly from the .csv file timestamps by the sigrok/PulseView .csv importer.
+
+Now, we can start PulseView, and import these .csv's there, and then export the sigrok `.sr` session files corresponding to them - again, since upon each import, PulseView will start a new session, we will obtain (in this case) one `.sr` file for each `.csv` file (each of which contains data for a single analog channel).
+
+In PulseView, just click "Import Comma-separated values...", and then just type `t,a` in the subsequent "Import Comma-separated values" dialog (see [img/PulseView_csv_import_analog.png](img/PulseView_csv_import_analog.png)). The data will be imported, and then you can click Save As, and choose "Save as type:" "srzip session file format data files (*.sr)".
+
+Or, we can use the command line directly:
+
+```
+"C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3 -I csv:header=yes:column_formats=t,a \
+  -i 500MHz_digital_0.125MHz_analog_5sec_an.csv \
+  -o 500MHz_digital_0.125MHz_analog_5sec_an.sr
+
+"C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3 -I csv:header=yes:column_formats=t,a \
+  -i 6.25MHz_digital_1.5625MHz_analog_3sec_an.csv \
+  -o 6.25MHz_digital_1.5625MHz_analog_3sec_an.sr
+```
+
+These files are included in this repository:
+
+* [data/500MHz_digital_0.125MHz_analog_5sec_an.sr](data/500MHz_digital_0.125MHz_analog_5sec_an.sr)
+* [data/6.25MHz_digital_1.5625MHz_analog_3sec_an.sr](data/6.25MHz_digital_1.5625MHz_analog_3sec_an.sr)
+
+A quick check of the filesizes:
+
+```
+$ ls -la *_an.sr
+-rw-r--r-- 1 user None 490K Oct 19 07:25 500MHz_digital_0.125MHz_analog_5sec_an.sr
+-rw-r--r-- 1 user None 1.4M Oct 19 07:27 6.25MHz_digital_1.5625MHz_analog_3sec_an.sr
+```
+
+... and let's restate again, that these two files each have a single channel of analog data - however, at different sampling rates.
+
