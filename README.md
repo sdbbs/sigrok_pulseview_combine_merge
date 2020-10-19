@@ -194,3 +194,118 @@ $ ls -la *_an.sr
 
 ... and let's restate again, that these two files each have a single channel of analog data - however, at different sampling rates.
 
+---------
+
+Now, let's export the digital channels, from our Saleae Logic captures, into sigrok/PulseView `.sr` files. The Saleae Logic options here are:
+
+* Digital Only export - see [img/Saleae_Logic_Export_dg.png](img/Saleae_Logic_Export_dg.png)
+    * Export to **Binary** `.bin` file
+    * Export to **Csv** `.csv` file
+    * Export to **Vcd** `.vcd` file
+    * Export to **Matlab** `.mat` file
+
+For the Digital Only export, the **Matlab** - and the **Binary** - options present the same problem as earlier - we'd have to write a converter program, to get this data into sigrok/PulseView.
+
+The **Vcd** (see https://en.wikipedia.org/wiki/Value_change_dump) export typically works fine in this case, without having to set any options - and typically sigrok/PulseView can import digital data from a .vcd without a problem.
+
+As far as the **Csv** export is concerned: if we choose the "Use timestamps [s]" option in the "CSV Settings", then we'll get a file like:
+
+```
+Time[s], Channel 1, Channel 2
+0.000000000000000, 1, 1
+0.000174486000000, 0, 1
+0.000661762000000, 1, 1
+0.000674068000000, 0, 1
+0.001168152000000, 1, 1
+...
+```
+
+... which quite clearly has gaps - which means it will not be imported correctly in sigrok/PulseView.
+
+However, if we use the "Use sample numbers" option instead, we get a file like:
+
+```
+Sample, Channel 1, Channel 2
+0, 1, 1
+87243, 0, 1
+330881, 1, 1
+337034, 0, 1
+584076, 1, 1
+...
+```
+
+... which again is a .csv file with gaps - which means it will not be imported correctly in sigrok/PulseView.
+
+So, our only option here, is to export the digital data from the Saleae Logic captures as a `.vcd` file.
+
+So, let's say we've exported these `.vcd` files from our source captures (as they are intermediary files, the `.vcd` files are not saved in this repository):
+
+* `6.25MHz_digital_1.5625MHz_analog_3sec.logicdata` -> `6.25MHz_digital_1.5625MHz_analog_3sec_dg.vcd`
+* `500MHz_digital_0.125MHz_analog_5sec.logicdata` -> `6.25MHz_digital_1.5625MHz_analog_3sec_dg.vcd`
+
+Again, let's check the file sizes:
+
+```
+$ ls -la *_dg.vcd
+-rw-r--r-- 1 user None 192K Oct 19 07:50 500MHz_digital_0.125MHz_analog_5sec_dg.vcd
+-rw-r--r-- 1 user None 105K Oct 19 07:51 6.25MHz_digital_1.5625MHz_analog_3sec_dg.vcd
+```
+
+Since `.vcd` is a text file format, it is interesting to see one property of these .vcd files:
+
+```
+$ grep -r 'timescale' . --include='*.vcd'
+./500MHz_digital_0.125MHz_analog_5sec_dg.vcd:$timescale 1 ns $end
+./6.25MHz_digital_1.5625MHz_analog_3sec_dg.vcd:$timescale 1 ns $end
+```
+
+The `$timescale` parameter can be seen as an implied sampling rate of the data in the file; note that, while the original digital captures were done at 500MHz and 6.25MHz respective sampling rates - the data from both, due to the `$timescale` VCD parameter, will be intepreted by sigrok/PulseView to have been captured at 1/1e-9 = 1 GHz sampling rate!
+
+We can also inspect the resulting .vcd files using `sigrok` (see also: https://sigrok.org/wiki/File_format:Vcd) - which will confirm the 1 GHz sampling rate interpretation:
+
+```
+$ "C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" -i 500MHz_digital_0.125MHz_analog_5sec_dg.vcd --show Samplerate: 1000000000
+Channels: 2
+- top.Channel_1: logic
+- top.Channel_2: logic
+Logic unitsize: 1
+Logic sample count: 5008344477
+
+$ "C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" -i 6.25MHz_digital_1.5625MHz_analog_3sec_dg.vcd --show
+Samplerate: 1000000000
+Channels: 2
+- top.Channel_1: logic
+- top.Channel_2: logic
+Logic unitsize: 1
+Logic sample count: 2759602561
+```
+
+
+Again, we can either use PulseView to import the `.vcd` files, and to export `.sr` files - or, we can use `sigrok` from the command like (note, this process takes a while, maybe a couple of minutes - regardless of which approach we choose):
+
+```
+"C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3 \
+  -i 500MHz_digital_0.125MHz_analog_5sec_dg.vcd \
+  -o 500MHz_digital_0.125MHz_analog_5sec_dg.sr
+
+"C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3 \
+  -i 6.25MHz_digital_1.5625MHz_analog_3sec_dg.vcd \
+  -o 6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+```
+
+These files are included in this repository:
+
+* [data/500MHz_digital_0.125MHz_analog_5sec_dg.sr](data/500MHz_digital_0.125MHz_analog_5sec_dg.sr)
+* [data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr](data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr)
+
+A quick check of the filesizes:
+
+```
+$ ls -la *_dg.sr
+-rw-r--r-- 1 user None 4.8M Oct 19 08:06 500MHz_digital_0.125MHz_analog_5sec_dg.sr
+-rw-r--r-- 1 user None 2.7M Oct 19 08:07 6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+```
+
+
