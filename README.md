@@ -517,5 +517,64 @@ Bit depth                                : 32 bits
 Stream size                              : 11.2 GiB (100%)
 ```
 
-So, we got an upsampled file in reasonable time, and with (relatively) reasonable file size even - however, by default, `sox` performs sample interpolation when resampling ( see: https://stackoverflow.com/questions/64438773/resample-upsample-wav-without-interpolation-sox ), which will definitely (at least partially) mess up our analog measurement data.
+So, we got an upsampled file in reasonable time, and with (relatively) reasonable file size even - however, by default, `sox` performs sample interpolation when resampling ( see: https://stackoverflow.com/questions/64438773/resample-upsample-wav-without-interpolation-sox ), which will definitely (at least partially) mess up our analog measurement data. Note that the duration is, however, reported wrong (but that is likely a limitation of `mediainfo`).
 
+Thus, we might as well write our own "upsampler" for `.wav` files - and here, it is: [code/upsample_wav_nointerp.c](code/upsample_wav_nointerp.c). It uses [libsndfile](http://www.mega-nerd.com/libsndfile/) to read and write `.wav` files, and it can *only* handle upsampling without interpolation (simply repeating samples), and *only* for integer ratios between upsampled and original sampling rates, and *only* for mono files with float samples. The source file contains instructions for compiling it under MINGW64 in Windows (the compiled `.exe` is not included in this repository), but it should be possible to compile it for Linux, too.
+
+With this program, we get the following results:
+
+```
+$ time code/upsample_wav_nointerp.exe data/6.25MHz_digital_1.5625MHz_analog_3sec_an.wav 1000000000
+Got input file: C:\src\sigrok_pulseview_combine_merge\data\6.25MHz_digital_1.5625MHz_analog_3sec_an.wav
+Got input new rate: 1000000000
+Opened input file: C:\src\sigrok_pulseview_combine_merge\data\6.25MHz_digital_1.5625MHz_analog_3sec_an.wav with sampling rate: 1562500
+Sample rate conversion factor: 640
+ *** Assuming FLOAT_LE sample format ***
+Saving to output file: C:\src\sigrok_pulseview_combine_merge\data\6.25MHz_digital_1.5625MHz_analog_3sec_an_out.wav
+Wrote 3019681920 samples. Program finished.
+
+real    1m59.007s
+user    0m0.000s
+sys     0m0.015s
+
+$ ls -la data/6.25MHz_digital_1.5625MHz_analog_3sec_an_out.wav
+-rw-r--r-- 1 user None 12G Oct 20 09:56 data/6.25MHz_digital_1.5625MHz_analog_3sec_an_out.wav
+
+
+$ time code/upsample_wav_nointerp.exe data/500MHz_digital_0.125MHz_analog_5sec_an.wav 1000000000
+Got input file: D:\src\sigrok_pulseview_combine_merge_git\data\500MHz_digital_0.125MHz_analog_5sec_an.wav
+Got input new rate: 1000000000
+Opened input file: D:\src\sigrok_pulseview_combine_merge_git\data\500MHz_digital_0.125MHz_analog_5sec_an.wav with sampling rate: 125000
+Sample rate conversion factor: 8000
+ *** Assuming FLOAT_LE sample format ***
+Saving to output file: D:\src\sigrok_pulseview_combine_merge_git\data\500MHz_digital_0.125MHz_analog_5sec_an_out.wav
+Wrote 5011240000 samples. Program finished.
+
+real    3m39.996s
+user    0m0.000s
+sys     0m0.016s
+
+$ ls -la data/500MHz_digital_0.125MHz_analog_5sec_an_out.wav
+-rw-r--r-- 1 user None 19G Oct 20 10:21 data/500MHz_digital_0.125MHz_analog_5sec_an_out.wav
+```
+
+So, we got the right files - upsampled without interpolation, with acceptable time of conversion, and they can be loaded in PulseView fine. Finally, we'd want to use sigrok to generate `.sr` files that will contain the upsampled analog captures:
+
+```
+$ time "C:\Program Files (x86)\sigrok\sigrok-cli\sigrok-cli.exe" \
+  -l 3\
+  -i 500MHz_digital_0.125MHz_analog_5sec_an_out.wav \
+  -o 500MHz_digital_0.125MHz_analog_5sec_an_1GHz.sr
+
+cli: Received SR_DF_HEADER.
+cli: Received SR_DF_META.
+cli: Got samplerate 1000000000 Hz.
+cli: Received SR_DF_ANALOG (72000 samples).
+cli: Received SR_DF_END.
+
+real    0m0.227s
+user    0m0.000s
+sys     0m0.015s
+```
+
+Unfortunately, the `sigrok-cli` for some reason fails to import the *entire* `.wav` file (only the first 72000 samples are  - and so, we must import the `.wav`, and export the `.sr` from PulseView.
