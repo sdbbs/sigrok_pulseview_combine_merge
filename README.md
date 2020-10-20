@@ -425,3 +425,97 @@ So:
 
 So, while this approach does conserve memory (and avoids related freezes/crashes) - it is, again, not really viable, due to the massive ammount of processing time.
 
+However, there is one more thing we can do - we can load up the "original" analog `.csv` files in PulseView, and we can export them as `.wav` (the only MS WAV export option in PulseView is "Scale", and we'll keep that at 1.00). Here is what we obtain as a result of that process - again, as intermediary files, these `.wav` files are not kept in this repo:
+
+```
+$ ls -la data/*_an.wav
+-rw-r--r-- 1 user None 2.4M Oct 20 06:31 data/500MHz_digital_0.125MHz_analog_5sec_an.wav
+-rw-r--r-- 1 user None  18M Oct 20 06:30 data/6.25MHz_digital_1.5625MHz_analog_3sec_an.wav
+
+$ mediainfo data/*_an.wav
+General
+Complete name                            : data/500MHz_digital_0.125MHz_analog_5sec_an.wav
+Format                                   : Wave
+File size                                : 2.39 MiB
+Duration                                 : 5 s 11 ms
+Overall bit rate mode                    : Constant
+Overall bit rate                         : 4 000 kb/s
+IsTruncated                              : Yes
+
+Audio
+Format                                   : PCM
+Format profile                           : Float
+Codec ID                                 : 3
+Codec ID/Hint                            : IEEE
+Duration                                 : 5 s 11 ms
+Bit rate mode                            : Constant
+Bit rate                                 : 4 000 kb/s
+Channel(s)                               : 1 channel
+Sampling rate                            : 125 kHz
+Bit depth                                : 32 bits
+Stream size                              : 2.39 MiB (100%)
+
+General
+Complete name                            : data/6.25MHz_digital_1.5625MHz_analog_3sec_an.wav
+Format                                   : Wave
+File size                                : 18.0 MiB
+Duration                                 : 3 s 19 ms
+Overall bit rate mode                    : Constant
+Overall bit rate                         : 50.0 Mb/s
+IsTruncated                              : Yes
+
+Audio
+Format                                   : PCM
+Format profile                           : Float
+Codec ID                                 : 3
+Codec ID/Hint                            : IEEE
+Duration                                 : 3 s 19 ms
+Bit rate mode                            : Constant
+Bit rate                                 : 50.0 Mb/s
+Channel(s)                               : 1 channel
+Sampling rate                            : 1 563 kHz
+Bit depth                                : 32 bits
+Stream size                              : 18.0 MiB (100%)
+```
+
+Now, we can use an audio program like [SoX - Sound eXchange](https://sourceforge.net/projects/sox/) to perform the resampling:
+
+```
+$ time sox data/6.25MHz_digital_1.5625MHz_analog_3sec_an.wav -r 1000000000 data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.wav
+C:\Program Files (x86)\sox-14-4-2\sox.exe WARN wav: Premature EOF on .wav input file
+C:\Program Files (x86)\sox-14-4-2\sox.exe WARN rate: rate clipped 200180190 samples; decrease volume?
+C:\Program Files (x86)\sox-14-4-2\sox.exe WARN sox: `data/6.25MHz_digital_1.5625MHz_analog_3sec_an.wav' input clipped 403873 samples
+C:\Program Files (x86)\sox-14-4-2\sox.exe WARN sox: `data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.wav' output clipped 207161190 samples; decrease volume?
+
+real    3m8.008s
+user    0m0.000s
+sys     0m0.031s
+
+$ ls -la data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.wav
+-rw-r--r-- 1 user None 12G Oct 20 06:40 data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.wav
+
+$ mediainfo data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.wav
+General
+Complete name                            : data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.wav
+Format                                   : Wave
+File size                                : 11.2 GiB
+Duration                                 : 49 s 931 ms
+Overall bit rate mode                    : Constant
+Overall bit rate                         : 1 935 Mb/s
+
+Audio
+Format                                   : PCM
+Format profile                           : Float
+Codec ID                                 : 3
+Codec ID/Hint                            : IEEE
+Duration                                 : 49 s 931 ms
+Bit rate mode                            : Constant
+Bit rate                                 : 1 935 Mb/s
+Channel(s)                               : 1 channel
+Sampling rate                            : 1 000 MHz
+Bit depth                                : 32 bits
+Stream size                              : 11.2 GiB (100%)
+```
+
+So, we got an upsampled file in reasonable time, and with (relatively) reasonable file size even - however, by default, `sox` performs sample interpolation when resampling ( see: https://stackoverflow.com/questions/64438773/resample-upsample-wav-without-interpolation-sox ), which will definitely (at least partially) mess up our analog measurement data.
+
