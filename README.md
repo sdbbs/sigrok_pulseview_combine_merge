@@ -366,15 +366,62 @@ Note that sigrok (or rather, `libsigrok`) has a Python API: https://www.sigrok.o
 
 ... and indeed, as of time of this writing, there are problems compiling in this setup (see [msys2_mingw64_sigrok_build_log.md](msys2_mingw64_sigrok_build_log.md)
 
+## Upsampling the analog captures
+
 So, we need to go few steps back: since the digital data .vcd files are both already on 1 GHz sampling rate, all we need to do is, to upsample the analog data .csv files to 1 GHz as well.
 
 Thankfully, it is relatively easy to resample .csv files, that are in the format in this example, using the [pandas](https://pandas.pydata.org/) Python library. This repository contains one script that does that:
 
     python3 code/resample_csv_pandas.py data/500MHz_digital_0.125MHz_analog_5sec_an.csv
 
-However, note that this script is so memory hungry, it will most likely cause your system to hang or freeze (or fail with `MemoryError: Unable to allocate 37.3 GiB for an array with shape (5011232001,) and data type int64`).
+However, note that this script is so memory hungry, it will most likely cause your system to hang or freeze (and likely, eventually fail with `MemoryError: Unable to allocate 37.3 GiB for an array with shape (5011232001,) and data type int64`).
+
+So, a trivial use of `pandas` to resample (upsample) the analog captures is not really viable at time of writing.
+
+We can take another approach - instead of using pandas, parse the .csv line by line, and emit the upsampled lines accordingly; this approach will definitely not use as much memory. There is a script in this repo that does that; however, here are some results:
+
+```
+# in MINGW64 shell
+$ time python3 code/resample_csv_plain.py data/500MHz_digital_0.125MHz_analog_5sec_an.csv
+Loading input CSV file: C:/src/sigrok_pulseview_combine_merge_git/data/500MHz_digital_0.125MHz_analog_5sec_an.csv, saving output file C:/src/sigrok_pulseview_combine_merge_git/data/500MHz_digital_0.125MHz_analog_5sec_an_0.000000001.csv
+
+1687912: ['0.001687910', ' -0.247291326522827']
+^C
+
+real    836m57.445s
+user    566m55.781s
+sys     223m27.013s
+
+$ ls -la data/500MHz_digital_0.125MHz_analog_5sec_an_0.000000001.csv
+-rw-r--r-- 1 user None 54M Oct 20 06:12 data/500MHz_digital_0.125MHz_analog_5sec_an_0.000000001.csv
 
 
 
+# in MSYS2 shell:
+$ time python3 code/resample_csv_plain.py data/6.25MHz_digital_1.5625MHz_analog_3sec_an.csv
+Loading input CSV file: /d/src/sigrok_pulseview_combine_merge_git/data/6.25MHz_digital_1.5625MHz_analog_3sec_an.csv, saving output file /d/src/sigrok_pulseview_combine_merge_git/data/6.25MHz_digital_1.5625MHz_analog_3sec_an_0.000000001.csv
 
+301662098: ['0.301662096', ' 0.853835046291351']
+^C
+Traceback (most recent call last):
+  File "code/resample_csv_plain.py", line 77, in <module>
+    main(sys.argv[1:])
+  File "code/resample_csv_plain.py", line 62, in main
+    sys.stderr.write("\r{}: {}".format(line_count, t_row)); sys.stderr.flush()
+KeyboardInterrupt
+
+real    806m5.954s
+user    76m33.249s
+sys     30m14.046s
+
+$ ls -la data/6.25MHz_digital_1.5625MHz_analog_3sec_an_0.000000001.csv
+-rw-r--r-- 1 user None 9.2G Oct 20 06:13 data/6.25MHz_digital_1.5625MHz_analog_3sec_an_0.000000001.csv
+```
+
+So:
+
+* In MINGW64's Python (Python 3.8.6), it took 836 min (13 hours 56 min) to emit enough lines at 1 GHz sampling rate, to cover the capture up to 1.6 ms, which represents 0.032% of the 5-second capture
+* In MSYS2's Python (Python 3.8.5), it took 806 min (13 hours 26 min) to emit enough lines at 1 GHz sampling rate, to cover the capture up to 301.6 ms, which represents 10.053% of the 3-second capture
+
+So, while this approach does conserve memory (and avoids related freezes/crashes) - it is, again, not really viable, due to the massive ammount of processing time.
 
