@@ -577,4 +577,12 @@ user    0m0.000s
 sys     0m0.015s
 ```
 
-Unfortunately, the `sigrok-cli` for some reason fails to import the *entire* `.wav` file (only the first 72000 samples are  - and so, we must import the `.wav`, and export the `.sr` from PulseView.
+Unfortunately, the `sigrok-cli` for some reason fails to import the *entire* `.wav` file (only the first 72000 samples are imported) - and so, we must import the `.wav`, and export the `.sr` from PulseView. These files are included in the repository, and their files sizes are:
+
+```
+$ ls -la data/*_1GHz.sr
+-rw-r--r-- 1 user None 22M Oct 22 12:10 data/500MHz_digital_0.125MHz_analog_5sec_an_1GHz.sr
+-rw-r--r-- 1 user None 18M Oct 22 11:10 data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.sr
+```
+
+
