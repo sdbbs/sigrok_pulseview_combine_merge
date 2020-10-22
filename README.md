@@ -585,4 +585,132 @@ $ ls -la data/*_1GHz.sr
 -rw-r--r-- 1 user None 18M Oct 22 11:10 data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.sr
 ```
 
+## Merging into a single .sr session
+
+First of all, let us confirm that all of the `.sr` files we want to merge into a single session, are at the same sampling rate. As we can see from https://sigrok.org/wiki/File_format:Sigrok/v2 an `.sr` file is essentially a zip file, and the information about sample rate is in the `metadata` file stored in the `.sr` zip file. The parsing of these files is otherwise implemented in [libsigrok: session_file.c](https://github.com/sigrokproject/libsigrok/blob/master/src/session_file.c).
+
+So we can do the following in the `bash` command line of MSYS2 on Windows:
+
+```
+$ ls data/*{_dg,_an_1GHz}.sr | while read f; do echo -e "\n$f"; unzip -p $f metadata ; done
+
+data/500MHz_digital_0.125MHz_analog_5sec_an_1GHz.sr
+[global]
+sigrok version=0.6.0-git-d7df9dc
+
+[device 1]
+samplerate=1 GHz
+total analog=1
+analog1=CH1
+
+data/500MHz_digital_0.125MHz_analog_5sec_dg.sr
+[global]
+sigrok version=0.6.0-git-d7df9dc
+
+[device 1]
+capturefile=logic-1
+total probes=2
+samplerate=1 GHz
+total analog=0
+probe1=top.Channel_1
+probe2=top.Channel_2
+unitsize=1
+
+data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.sr
+[global]
+sigrok version=0.6.0-git-d7df9dc
+
+[device 1]
+samplerate=1 GHz
+total analog=1
+analog1=CH1
+
+data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+[global]
+sigrok version=0.6.0-git-d7df9dc
+
+[device 1]
+capturefile=logic-1
+total probes=2
+samplerate=1 GHz
+total analog=0
+probe1=top.Channel_1
+probe2=top.Channel_2
+unitsize=1
+```
+
+So, we've confirmed that all the relevant files are at the same sampling rate - in this case, 1 GHz.
+
+Now, let's take a brief look of the naming of files inside each capture:
+
+```
+$ ls data/*{_dg,_an_1GHz}.sr | while read f; do echo; unzip -l $f | (head -n7; echo "..."; tail -n7) ; done
+
+Archive:  data/500MHz_digital_0.125MHz_analog_5sec_an_1GHz.sr
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        1  2020-10-22 11:55   version
+       98  2020-10-22 11:55   metadata
+  4194304  2020-10-22 11:55   analog-1-1-1
+  4194304  2020-10-22 11:55   analog-1-1-2
+...
+  4194304  2020-10-22 12:10   analog-1-1-4776
+  4194304  2020-10-22 12:10   analog-1-1-4777
+  4194304  2020-10-22 12:10   analog-1-1-4778
+  4194304  2020-10-22 12:10   analog-1-1-4779
+   381184  2020-10-22 12:10   analog-1-1-4780
+---------                     -------
+20044960099                     4782 files
+
+Archive:  data/500MHz_digital_0.125MHz_analog_5sec_dg.sr
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        1  2020-10-19 08:04   version
+      174  2020-10-19 08:04   metadata
+  4194304  2020-10-19 08:04   logic-1-1
+  4194304  2020-10-19 08:04   logic-1-2
+...
+  4194304  2020-10-19 08:06   logic-1-1191
+  4194304  2020-10-19 08:06   logic-1-1192
+  4194304  2020-10-19 08:06   logic-1-1193
+  4194304  2020-10-19 08:06   logic-1-1194
+   345501  2020-10-19 08:06   logic-1-1195
+---------                     -------
+5008344652                     1197 files
+
+Archive:  data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.sr
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        1  2020-10-22 11:05   version
+       98  2020-10-22 11:05   metadata
+  4194304  2020-10-22 11:05   analog-1-1-1
+  4194304  2020-10-22 11:05   analog-1-1-2
+...
+  4194304  2020-10-22 11:10   analog-1-1-2876
+  4194304  2020-10-22 11:10   analog-1-1-2877
+  4194304  2020-10-22 11:10   analog-1-1-2878
+  4194304  2020-10-22 11:10   analog-1-1-2879
+  3326464  2020-10-22 11:10   analog-1-1-2880
+---------                     -------
+12078727779                     2882 files
+
+Archive:  data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        1  2020-10-19 08:07   version
+      174  2020-10-19 08:07   metadata
+  4194304  2020-10-19 08:07   logic-1-1
+  4194304  2020-10-19 08:07   logic-1-2
+...
+  4194304  2020-10-19 08:07   logic-1-654
+  4194304  2020-10-19 08:07   logic-1-655
+  4194304  2020-10-19 08:07   logic-1-656
+  4194304  2020-10-19 08:07   logic-1-657
+  3944833  2020-10-19 08:07   logic-1-658
+---------                     -------
+2759602736                     660 files
+```
+
+So, essentially, we need to unpack each of these .sr files, rename their contents accordingly, and then write in a new `metadata` file that will refer to them.
+
 
