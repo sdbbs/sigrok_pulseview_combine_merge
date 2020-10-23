@@ -713,4 +713,46 @@ Archive:  data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
 
 So, essentially, we need to unpack each of these .sr files, rename their contents accordingly, and then write in a new `metadata` file that will refer to them.
 
+---------
+
+However, there is a problem here: the specification at https://sigrok.org/wiki/File_format:Sigrok/v2 does note that for analog channel data:
+
+> There can be one or more binary files in the ZIP file, which contain analog samples. These have a name of
+>
+> * analog-1-<chan>-1, analog-1-<chan>-2, analog-1-<chan>-3, and so on (where <chan> is the analog channel number).
+
+... the channel number is included as part of the file; so we can in principle rearrange analog tracks, by changing the channel index part of the corresponding data `analog-1-*` filenames.
+
+However, this is not the case for digital signals:
+
+> There can be one or more binary files in the ZIP file, which contain logic analyzer samples. These have a name of
+>
+> * logic-1 (one large file; deprecated, but still supported), or
+> * logic-1-1, logic-1-2, logic-1-3, and so on (many smaller files).
+
+Clearly, there is no number for "channel index" in the `logic-1-*` filenames; this implies that *all* of the digital tracks in a session are packed and saved into a single file (saved in many smaller snippets/chunks).
+
+And that means, in order to append digital/logic tracks to a session, we need to somehow add their data to the `logic-1-*` file snippets of that session! In fact, comments in [srzip.c](https://github.com/sigrokproject/libsigrok/blob/master/src/output/srzip.c) confirm that:
+
+>     * Allocate one samples buffer for all logic channels, and
+>     * several samples buffers for the analog channels. Allocate
+>     * buffers of CHUNK_SIZE size (in bytes), and determine the
+>     * sample counts from the respective channel counts and data
+>     * type widths.
+>     *
+>     * These buffers are intended to reduce the number of ZIP
+>     * archive update calls, and decouple the srzip output module
+>     * from implementation details in other acquisition device
+>     * drivers and input modules.
+
+Looking at the code in there, it is hardly trivial to add data to the existing `logic-1-*` chunks in a sigrok session file. Possibly, it might have been possible to handle this through the libsigrok Python API - but as we saw earlier, at this time we cannot build it for the platform this document is written on (MSYS2 on Windows).
+
+Thus, we will take another approach: we will export all our `.sr` data to `.vcd` (which, in principle can handle both analog and digital data); and then we will use a Python `.vcd` API to generate a merged file, and finally we will convert the merged `.vcd` to a merged `.sr` file.
+
+Note that, for Python vcd libraries:
+
+* [PyVCD](https://pyvcd.readthedocs.io/en/latest/) can only write a data structure in memory as .vcd file, but cannot read a .vcd file as data structure in memory
+* [vcdvcd](https://pypi.org/project/vcdvcd/) (fork of [Verilog_VCD](https://github.com/zylin/Verilog_VCD)) can only read a .vcd file as data structure in memory, but cannot write a data structure in memory as .vcd file
+* [vcd_parsealyze](https://github.com/wohali/vcd_parsealyze) (fork of [vcd_parser](https://github.com/GordonMcGregor/vcd_parser)) - can only read a .vcd file as data structure in memory, but cannot write a data structure in memory as .vcd file
+* [pyDigitalWaveTools](https://pypi.org/project/pyDigitalWaveTools/) - can apparently both read and write .vcd files
 
