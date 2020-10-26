@@ -1,8 +1,8 @@
 # Example for combining sigrok .sr files
 
-As of PulseView 0.5.0-git-9d307c6 / libsigrok 0.6.0-git-d7df9dc, there is no facility, that would allow combining captures from .sr files.
+As of PulseView 0.5.0-git-9d307c6 / libsigrok 0.6.0-git-d7df9dc, there seems to be no facility, that would allow combining captures from .sr files.
 
-For instance, in Audacity, which is an audio editor, but shares the visualisation of waveform tracks with PulseView, if the user does File/Import/Audio... once at first, a new session will be opened, and the audio tracks from the file will be added to this session. If the user then does File/Import/Audio... a second time, importing a second file, then the tracks from the second file will be added to the track list of the session - creating a session that contains the combination of the audio tracks from both files.
+For instance, in Audacity, - which is an audio editor, but shares the visualisation of waveform tracks with PulseView, - if the user does File/Import/Audio... once at first, a new session will be opened, and the audio tracks from the file will be added to this session. If the user then does File/Import/Audio... a second time, importing a second file, then the tracks from the second file will be added to the track list of the session - creating a session that contains the combination of the audio tracks from both files.
 
 However, if the user does something similar in PulseView - a new session will be opened for each import, thereby making it impossible to create a session which contains waveforms/data from multiple files.
 
@@ -774,3 +774,88 @@ byte_AB = (byte_B << num_channel_A) + byte_A
         = 0b00011111
 ```
 
+And finally, this is implemented in the Python script [code/merge_sr_sessions.py](code/merge_sr_sessions.py); and this is how it performs on MSYS2 under Windows:
+
+```
+$ time python3 code/merge_sr_sessions.py data/*_dg.sr data/*_an_1GHz.sr
+Assumed output samplerate: 1 GHz
+Got .sr input files:
+01/04: /d/src/sigrok_pulseview_combine_merge_git/data/500MHz_digital_0.125MHz_analog_5sec_dg.sr
+  capturefile: logic-1
+  total probes: 2
+  samplerate: 1 GHz
+  total analog: 0
+  probe1: top.Channel_1
+  probe2: top.Channel_2
+  unitsize: 1
+02/04: /d/src/sigrok_pulseview_combine_merge_git/data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+  capturefile: logic-1
+  total probes: 2
+  samplerate: 1 GHz
+  total analog: 0
+  probe1: top.Channel_1
+  probe2: top.Channel_2
+  unitsize: 1
+03/04: /d/src/sigrok_pulseview_combine_merge_git/data/500MHz_digital_0.125MHz_analog_5sec_an_1GHz.sr
+  samplerate: 1 GHz
+  total analog: 1
+  analog1: CH1
+04/04: /d/src/sigrok_pulseview_combine_merge_git/data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.sr
+  samplerate: 1 GHz
+  total analog: 1
+  analog1: CH1
+
+Total digital tracks to export: 4
+Total  analog tracks to export: 2
+
+Output metadata:
+[global]
+sigrok version = 0.6.0-git-d7df9dc
+
+[device 1]
+capturefile = logic-1
+total probes = 4
+samplerate = 1 GHz
+total analog = 2
+probe1 = top.Channel_1_0
+probe2 = top.Channel_2_0
+unitsize = 1
+probe3 = top.Channel_1_1
+probe4 = top.Channel_2_1
+analog5 = CH1_2
+analog6 = CH1_3
+
+
+
+Extracting data in folder: /tmp/mergedout; output file will be: /tmp/mergedout.sr
+Removed existing directory /tmp/mergedout
+Created directory /tmp/mergedout
+
+Extracting 01/04: /d/src/sigrok_pulseview_combine_merge_git/data/500MHz_digital_0.125MHz_analog_5sec_dg.sr
+  ... unpacked 1197 files
+Extracting 02/04: /d/src/sigrok_pulseview_combine_merge_git/data/6.25MHz_digital_1.5625MHz_analog_3sec_dg.sr
+  ... unpacked 660 files
+Extracting 03/04: /d/src/sigrok_pulseview_combine_merge_git/data/500MHz_digital_0.125MHz_analog_5sec_an_1GHz.sr
+  ... unpacked 4782 files
+Extracting 04/04: /d/src/sigrok_pulseview_combine_merge_git/data/6.25MHz_digital_1.5625MHz_analog_3sec_an_1GHz.sr
+  ... unpacked 2882 files
+Merging digital data...
+Packing into sr zip (unfortunately, it also adds .zip extension at end)
+
+real    23m58.196s
+user    12m21.687s
+sys     2m4.999s
+
+$ mv /tmp/mergedout.sr.zip /tmp/mergedout.sr
+
+$ ls -la /tmp/mergedout.sr
+-rw-r--r-- 1 user None 45M Oct 26 18:42 /tmp/mergedout.sr
+```
+
+So, we got a merged file, 45 MB in (compressed) size, which took about 23 minutes to convert.
+
+Considering the amount of data, it is also slow to load in PulseView fully (it takes like half an hour or so); but after it is loaded, and we ungroup the digital channels, and we rearrange them a bit - we're greeted with this sight:
+
+[![PulseView_mergedout_sr](img/PulseView_mergedout_sr.png)](img/PulseView_mergedout_sr.png)
+
+... and thus, the goal of this exercise - to merge several sigrok/PulseView .sr sessions in one - has been achieved.
