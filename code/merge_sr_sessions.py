@@ -5,39 +5,24 @@ Note: sigrok session expects all tracks to be declared sequentially, e.g.:
 probe1=... probe2=... probe3=... probe4=... probe5=... probe6=... probe7=... probe8=... analog9=...
 (see C:\Program Files (x86)\sigrok\PulseView\examples\ad5258_read_once_write_continuously_triangle.sr)
 And, in that case, the analog data files are called analog-1-9-1, analog-1-9-2 ... etc.
-Note also, that the analog tracks get loaded one after the other (i.e. not in parallel)
+Note also, that first the digital tracks get loaded, and then the analog tracks
+get loaded one after the other (i.e. not in parallel)
 
-https://github.com/sigrokproject/libsigrok/blob/master/src/output/srzip.c :
+Call with:
 
-* Allocate one samples buffer for all logic channels, and
-* several samples buffers for the analog channels. Allocate
-* buffers of CHUNK_SIZE size (in bytes), and determine the
-* sample counts from the respective channel counts and data
-* type widths.
-
-https://github.com/sigrokproject/libsigrok/blob/master/src/input/vcd.c :
-
-* Supported features:
-* - $var with 'wire' and 'reg' types of scalar variables
-
-(that is, analog captures in .vcd input are not supported, since
-
-this works:
-[device 1]
-samplerate=1 GHz
-total analog=2
-analog1=CH1
-analog2=CH2
-unitsize=1
-
+python3 code/merge_sr_sessions.py data/*_dg.sr data/*_an_1GHz.sr
 """
 
 import sys, os
+import shutil
 import argparse
 import tempfile
 import zipfile
 import configparser
 import io
+import itertools
+import re
+from contextlib import ExitStack # Python 3.3+
 
 class InputSrFile(object):
   def __init__(self, *args, **kwargs):
@@ -45,8 +30,22 @@ class InputSrFile(object):
     self.archive = kwargs.get('archive', None)
     self.metadata = kwargs.get('metadata', None)
     self.version = kwargs.get('version', None)
+    self.num_logic_ch = kwargs.get('num_logic_ch', 0)
+    self.num_anlog_ch = kwargs.get('num_anlog_ch', 0)
+    self.dg_fl_list = kwargs.get('dg_fl_list', []) # converted names
+    self.an_fl_list = kwargs.get('dg_fl_list', []) # converted names
   def __str__(self):
     return "{}".format( self.__dict__ )
+
+def atoi(text): # SO:5967500
+  return int(text) if text.isdigit() else text
+def natural_keys(text):
+  '''
+  alist.sort(key=natural_keys) sorts in human order
+  http://nedbatchelder.com/blog/200712/human_sorting.html
+  (See Toothy's implementation in the comments)
+  '''
+  return [ atoi(c) for c in re.split(r'(\d+)', text) ]
 
 def parse_args(args):
   parser = argparse.ArgumentParser(description="""merge multiple sikrok/PulseView .sr session files into a single one. Note that all individual .sr files must be at the same sampling rate. A folder (processing directory, which is deleted and re-created at each call of the script) will be created in the output directory, where data will be stored during processing; then this data gets packed into the output .sr file (also stored in the output directory)""")
@@ -61,6 +60,8 @@ def main(inargs):
   args = parse_args(inargs)
   input_sr_files = []
   out_samplerate = None
+  an_sr_files = [] # list of sr files with analog captures
+  dg_sr_files = [] # list of sr files with digital captures
   for tfile in args.input_sr_file:
     fname, ext = os.path.splitext(tfile)
     if ext == '.sr':
@@ -110,26 +111,49 @@ def main(inargs):
       out_metadata_config = configparser.ConfigParser()
       out_metadata_config.read_file(config_string)
     if 'total probes' in tfobj.metadata['device 1']:
-      this_tot_probes = tfobj.metadata.getint('device 1', 'total probes')
-      out_total_probes += this_tot_probes
+      tfobj.num_logic_ch = tfobj.metadata.getint('device 1', 'total probes')
+      out_total_probes += tfobj.num_logic_ch
+      if tfobj not in dg_sr_files:
+        dg_sr_files.append(tfobj)
     if 'total analog' in tfobj.metadata['device 1']:
-      this_tot_analog = tfobj.metadata.getint('device 1', 'total analog')
-      out_total_analog += this_tot_analog
+      tfobj.num_anlog_ch = tfobj.metadata.getint('device 1', 'total analog')
+      out_total_analog += tfobj.num_anlog_ch
+      if tfobj not in an_sr_files:
+        an_sr_files.append(tfobj)
     for (each_key, each_val) in tfobj.metadata.items('device 1'):
       print("  {}: {}".format(each_key, each_val))
+      if each_key.startswith("probe"):
+        out_probe_names.append( "{}_{}".format(each_val, itf) )
+      elif each_key.startswith("analog"):
+        out_analog_names.append( "{}_{}".format(each_val, itf) )
   print()
   print("Total digital tracks to export: {}".format(out_total_probes))
   print("Total  analog tracks to export: {}".format(out_total_analog))
+  print()
+  print("Output metadata:")
+  out_metadata_config['device 1']['total analog'] = str( out_total_analog )
+  out_metadata_config['device 1']['total probes'] = str( out_total_probes )
+  num_dig_chans = 0
+  for ipn, pname in enumerate(out_probe_names):
+    tipn = ipn+1
+    out_metadata_config['device 1']['probe{}'.format(tipn)] = pname
+    num_dig_chans = tipn
+  for ian, aname in enumerate(out_analog_names):
+    out_metadata_config['device 1']['analog{}'.format(ian+1+num_dig_chans)] = aname
+  out_config_string = io.StringIO()
+  out_metadata_config.write(out_config_string)
+  print(out_config_string.getvalue())
+  print()
   outprocdir = os.path.join( os.path.abspath(args.outdir), args.outfilename )
   outsrfile = "{}.sr".format(outprocdir)
   print("Extracting data in folder: {}; output file will be: {}".format(outprocdir, outsrfile))
   if os.path.isdir( outprocdir ):
-    os.rmdir( outprocdir )
+    shutil.rmtree( outprocdir ) # os.rmdir( outprocdir )
     print("Removed existing directory {}".format(outprocdir))
   os.mkdir( outprocdir )
   print("Created directory {}".format(outprocdir))
   print("")
-  idx_dg = 1
+  idx_dg = 2 # start from 2; we'll have to "pack" these into `logic-1-*` files in the end
   idx_an = 1
   for itf, tfobj in enumerate(input_sr_files):
     print("Extracting {:02d}/{:02d}: {}".format(itf+1, numinputfiles, tfobj.path))
@@ -142,9 +166,11 @@ def main(inargs):
         if zipfname.startswith("logic-"):
           got_dg = True
           newfname = zipfname.replace("logic-1", "logic-{}".format(idx_dg))
+          tfobj.dg_fl_list.append(newfname)
         elif zipfname.startswith("analog-1-"):
           got_an = True
-          newfname = zipfname.replace("analog-1-1", "analog-1-{}".format(idx_an))
+          newfname = zipfname.replace("analog-1-1", "analog-1-{}".format(num_dig_chans + idx_an))
+          tfobj.an_fl_list.append(newfname)
         #print("{} -> {}".format(zipfname, newfname))
         outfpath = os.path.join( outprocdir, newfname )
         with open(outfpath, "wb") as f:  # open the output path for writing
@@ -156,6 +182,51 @@ def main(inargs):
       idx_dg += 1
     if got_an:
       idx_an += 1
+  print("Merging digital data...")
+  dg_fl_lists = []
+  for tfobj in dg_sr_files:
+    tfobj.dg_fl_list.sort(key=natural_keys)
+    dg_fl_lists.append(tfobj.dg_fl_list)
+  #num_dig_capts = idx_dg-1
+  for ftuple in itertools.zip_longest(*dg_fl_lists):
+    outstr = ""
+    outdata = []
+    outfname = ''
+    # NOTE: this code assumes the first of the ftuple has the biggest ammount of files; if that is not the case, code is likely to crash!
+    for itf, tfile in enumerate(ftuple):
+      outstr += "{} {}; ".format(tfile, dg_sr_files[itf].num_logic_ch)
+      if tfile is not None:
+        tfpath = os.path.join( outprocdir, tfile )
+        if not outfname:
+          outfname = list(tfile)
+          outfname[6] = '1'
+          outfname = "".join(outfname)
+        with open(tfpath, "rb") as f:
+          if itf == 0:
+            outdata = bytearray(f.read()) # don't bitshift these
+          else:
+            toutdata = bytearray(f.read())
+            # assume these blocks are of same length:
+            for itb, tbyte in enumerate(toutdata):
+              outdata[itb] = outdata[itb] + (tbyte << dg_sr_files[itf-1].num_logic_ch)
+    outstr += "{}".format(outfname)
+    if outdata and outfname:
+      tfpath = os.path.join( outprocdir, outfname )
+      with open(tfpath, "wb") as f:
+        f.write(outdata)
+      for tfile in ftuple:
+        if tfile is not None:
+          os.remove( os.path.join( outprocdir, tfile ) )
+    #print(outstr)
+  # finally, output metadata
+  mdpath = os.path.join( outprocdir, "metadata" )
+  with open(mdpath, "w") as f:
+    out_metadata_config.write(f)
+  # and pack into zip
+  print("Packing into sr zip (unfortunately, it also adds .zip extension at end)")
+  shutil.make_archive(outsrfile, 'zip', outprocdir)
+
+
 
 ###### end of main()
 

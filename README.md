@@ -747,12 +747,30 @@ And that means, in order to append digital/logic tracks to a session, we need to
 
 Looking at the code in there, it is hardly trivial to add data to the existing `logic-1-*` chunks in a sigrok session file. Possibly, it might have been possible to handle this through the libsigrok Python API - but as we saw earlier, at this time we cannot build it for the platform this document is written on (MSYS2 on Windows).
 
-Thus, we will take another approach: we will export all our `.sr` data to `.vcd` (which, in principle can handle both analog and digital data); and then we will use a Python `.vcd` API to generate a merged file, and finally we will convert the merged `.vcd` to a merged `.sr` file.
+Thus, we might take another approach: we will export all our `.sr` data to `.vcd` (which, in principle can handle both analog and digital data); and then we will use a Python `.vcd` API to generate a merged file, and finally we will convert the merged `.vcd` to a merged `.sr` file.
 
-Note that, for Python vcd libraries:
+But note that, for Python vcd libraries:
 
 * [PyVCD](https://pyvcd.readthedocs.io/en/latest/) can only write a data structure in memory as .vcd file, but cannot read a .vcd file as data structure in memory
 * [vcdvcd](https://pypi.org/project/vcdvcd/) (fork of [Verilog_VCD](https://github.com/zylin/Verilog_VCD)) can only read a .vcd file as data structure in memory, but cannot write a data structure in memory as .vcd file
 * [vcd_parsealyze](https://github.com/wohali/vcd_parsealyze) (fork of [vcd_parser](https://github.com/GordonMcGregor/vcd_parser)) - can only read a .vcd file as data structure in memory, but cannot write a data structure in memory as .vcd file
-* [pyDigitalWaveTools](https://pypi.org/project/pyDigitalWaveTools/) - can apparently both read and write .vcd files
+* [pyDigitalWaveTools](https://pypi.org/project/pyDigitalWaveTools/) - can apparently both read and write .vcd files, but it is unclear how to pass data from an input to an output file
+
+So, merging via .vcd is a bit of a dead end, for now ....
+
+-------
+
+So, let us go back to the sigrok logic format - it turns out, that whenever we have less that 8 logic channels, they get encoded in a single byte value; thus, for a 2-channel digital signal, we expect to see only byte values 0x00, 0x01, 0x02 and 0x03 in a `logic-1-*` file! That can also be quickly checked in PulseView - if you do a "Import Raw binary logic data" of a `logic-1-*` file that contains only, say, two channels, you will get the same first two waveforms, regardless of if you enter 2, or 4, or another (larger) number of channels - the remaining channels will simply be zero.
+
+So, if we want to merge two logic/digital captures, where we know that the sum of the number of logic channels from both captures are <= 8, we'd simply read a byte from each capture, then bitshift one byte by the number of channels in the other byte, and add them, in order to get a merged byte; for instance:
+
+```
+byte_A (3-channel capture): 0b00000111
+byte_B (2-channel capture): 0b00000011
+
+byte_AB = (byte_B << num_channel_A) + byte_A
+        = (0b00000011 << 3) + 0b00000111
+        = 0b00011000 + 0b00000111
+        = 0b00011111
+```
 
