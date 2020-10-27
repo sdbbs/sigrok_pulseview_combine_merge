@@ -42,7 +42,7 @@ SNDFILE *infile, *outfile; //SO:10558275
 SF_INFO sfinfo_in, sfinfo_out;
 
 #define BUFFER_LEN 1024
-static float datain[BUFFER_LEN];
+//static float datain[BUFFER_LEN]; // nope - if we iterate via frames, we now need to adjust this size for number of channels, which we'll only have at runtime - so we must calloc!
 
 void usage(void) {
   fprintf(stderr, "Usage: upsample_wav_interp path/to/file.wav new_sample_rate_integer\n");
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
   }
 
   infile = sf_open(in_abs_path, SFM_READ, &sfinfo_in);
-  fprintf(stderr, "Opened input file: %s with sampling rate: %d\n", in_abs_path, sfinfo_in.samplerate);
+  fprintf(stderr, "Opened input file: %s with sampling rate: %d and number of channels: %d\n", in_abs_path, sfinfo_in.samplerate, sfinfo_in.channels);
   fflush(stderr);
 
   srate_factor = in_new_rate/sfinfo_in.samplerate;
@@ -126,10 +126,14 @@ int main(int argc, char* argv[]) {
   uint32_t readcount;
   //static float dataout[srate_factor*BUFFER_LEN]; // nope, need to malloc (error: storage size of 'dataout' isn't constant)
   //float* dataout = malloc(srate_factor*BUFFER_LEN * sizeof(float));
-  float* dataout = calloc(srate_factor*BUFFER_LEN, sizeof(float)); // zero it out
+  float* datain = calloc(sfinfo_in.channels*BUFFER_LEN, sizeof(float)); // zero it out
+  float* dataout = calloc(srate_factor*sfinfo_in.channels*BUFFER_LEN, sizeof(float)); // zero it out
   uint64_t total_samples_written = 0;
 
-  while ((readcount = sf_read_float (infile, datain, BUFFER_LEN)))
+  // note: sf_read_float reads samples (items); for multichannel, it fails for BUFFER_LEN that is not a multiple of number of channels
+  // so, use sf_readf_float instead; which reads frames, which "is just a block of samples, one for each channel"
+
+  while ((readcount = sf_readf_float (infile, datain, BUFFER_LEN)))
   {
     // example with libsamplerate (SO:10558275):
     //src_simple (&src_data, SRC_SINC_BEST_QUALITY, 1);
@@ -138,25 +142,44 @@ int main(int argc, char* argv[]) {
     //fprintf(stderr, "readcount %d\n", readcount);
     //fflush(stderr);
 
-    for(int i=0; i<readcount; i++) {
-      float inval = datain[i];
-      //fprintf(stderr, "i %d inval %f\n", i, inval);
+    // // this was the loop for (mono) with sf_read_float:
+    // for(int i=0; i<readcount; i++) {
+    //   float inval = datain[i];
+    //   //fprintf(stderr, "i %d inval %f\n", i, inval);
+    //   for(int tc=0; tc<srate_factor; tc++) {
+    //     int newind = i*srate_factor + tc;
+    //     dataout[newind] = inval;
+    //     //fprintf(stderr, "i %d inval %f tc %d readcount %d newind %d\n", i, inval, tc, readcount, newind);
+    //     //fflush(stderr);
+    //   }
+    // }
+
+    // the loop for multichannel with sf_readf_float; readcount is here number of *frames* read;
+    // so here, we do not duplicate samples within a frame - we duplicate the frames!
+    for(int ifr=0; ifr<readcount; ifr++) {
       for(int tc=0; tc<srate_factor; tc++) {
-        int newind = i*srate_factor + tc;
-        dataout[newind] = inval;
-        //fprintf(stderr, "i %d inval %f tc %d readcount %d newind %d\n", i, inval, tc, readcount, newind);
-        //fflush(stderr);
+        for(int isamp=0; isamp<sfinfo_in.channels; isamp++) {
+          int origind = ifr*sfinfo_in.channels + isamp;
+          float inval = datain[origind];
+          int newind = ifr*sfinfo_in.channels*srate_factor + tc*sfinfo_in.channels + isamp;
+          //fprintf(stderr, "ifr %d tc %d isamp %d origind %d newind %d inval %f readcount %d\n", ifr, tc, isamp, origind, newind, inval, readcount); fflush(stderr);
+          dataout[newind] = inval;
+        }
       }
     }
 
-    uint64_t samples_to_write = srate_factor*readcount;
-    sf_write_float(outfile, dataout, samples_to_write) ;
-    total_samples_written += samples_to_write;
+    uint64_t frames_to_write = srate_factor*readcount;
+    //sf_write_float(outfile, dataout, samples_to_write) ;
+    sf_writef_float(outfile, dataout, frames_to_write) ;
+    total_samples_written += frames_to_write*sfinfo_in.channels;//samples_to_write;
   };
 
   sf_close(infile);
   //sfinfo_out.frames = total_samples_written; // seems to have no effect, since sf_close should correct this; note that programs like `mediainfo` will likely report the duration wrong for huge sampling rates
   sf_close(outfile);
+
+  free(datain);
+  free(dataout);
 
   fprintf(stderr, "Wrote %llu samples. Program finished.\n", total_samples_written);
   fflush(stderr);
