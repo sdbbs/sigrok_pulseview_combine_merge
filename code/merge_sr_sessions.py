@@ -138,8 +138,11 @@ def main(inargs):
     tipn = ipn+1
     out_metadata_config['device 1']['probe{}'.format(tipn)] = pname
     num_dig_chans = tipn
+  analog_indices = []
   for ian, aname in enumerate(out_analog_names):
-    out_metadata_config['device 1']['analog{}'.format(ian+1+num_dig_chans)] = aname
+    new_analog_idx = ian+1+num_dig_chans
+    out_metadata_config['device 1']['analog{}'.format(new_analog_idx)] = aname
+    analog_indices.append(new_analog_idx)
   out_config_string = io.StringIO()
   out_metadata_config.write(out_config_string)
   print(out_config_string.getvalue())
@@ -155,6 +158,7 @@ def main(inargs):
   print("")
   idx_dg = 2 # start from 2; we'll have to "pack" these into `logic-1-*` files in the end
   idx_an = 1
+  pat_analog = re.compile(r'analog-1-(\d+)')
   for itf, tfobj in enumerate(input_sr_files):
     print("Extracting {:02d}/{:02d}: {}".format(itf+1, numinputfiles, tfobj.path))
     got_dg = False
@@ -169,7 +173,14 @@ def main(inargs):
           tfobj.dg_fl_list.append(newfname)
         elif zipfname.startswith("analog-1-"):
           got_an = True
-          newfname = zipfname.replace("analog-1-1", "analog-1-{}".format(num_dig_chans + idx_an))
+          #newfname = zipfname.replace("analog-1-1", "analog-1-{}".format(num_dig_chans + idx_an)) # works only for analog-1-1-30 input, but not analog-1-3-30; must use regex - see SO:64559976
+          def numrepl(matchobj):
+            prev_offset = 0
+            if itf > 0:
+              for ii in range(itf):
+                prev_offset += input_sr_files[ii].num_anlog_ch
+            return "analog-1-{}".format( analog_indices[ int(matchobj.group(1))-1 + prev_offset ] )
+          newfname = pat_analog.sub( numrepl, zipfname )
           tfobj.an_fl_list.append(newfname)
         #print("{} -> {}".format(zipfname, newfname))
         outfpath = os.path.join( outprocdir, newfname )
