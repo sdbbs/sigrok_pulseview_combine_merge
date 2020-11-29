@@ -1,7 +1,7 @@
 # Pulseview build log
 
 
-Trying to build pulseview from git - failed at something libusb; ... ok, fixed that ( [sigrok / ThreaC: [sigrok-devel] error: Windows builds require the event-abstraction branch of libusb ?](https://sourceforge.net/p/sigrok/mailman/sigrok-devel/thread/bc98f387-cfce-2832-ab3f-18dcea9fb87d%40brothers-sons.dk/#msg37138755) ); now this is the problem:
+Trying to build pulseview from git (see [msys2_mingw64_sigrok_build_log.md](msys2_mingw64_sigrok_build_log.md)) - failed at something libusb; ... ok, fixed that ( [sigrok / ThreaC: [sigrok-devel] error: Windows builds require the event-abstraction branch of libusb ?](https://sourceforge.net/p/sigrok/mailman/sigrok-devel/thread/bc98f387-cfce-2832-ab3f-18dcea9fb87d%40brothers-sons.dk/#msg37138755) ); now this is the problem:
 
 ```
 [100%] Linking CXX executable pulseview.exe
@@ -161,3 +161,15 @@ $ PYTHONHOME=/c/msys64/mingw64 ./pulseview.exe -D
 ```
 
 ... and PulseView finally runs!
+
+----------
+
+Note: once this part of the procedure has been done, to do an additional build of pulseview, just do this (and make sure [linklibs.rsp](linklibs.rsp) does not get changed):
+
+```
+cd C:/src/sigrok-util_git/build_debug_64/pulseview/build
+make
+
+# and when it builds, from same directory:
+PYTHONHOME=/c/msys64/mingw64 ./pulseview.exe -D
+```
